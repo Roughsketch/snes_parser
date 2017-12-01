@@ -26,9 +26,11 @@ pub enum Instruction {
     Implied(u8),
     Relative(u8, u8),
     RelativeLong(u8, u16),
+    Reserved(u8, u8),
     Stack(u8),
     StackInterrupt(u8, u8),
     StackRelative(u8, u8),
+    StackRelativeLong(u8, u16),
     StackRelativeY(u8, u8),
 }
 
@@ -59,9 +61,11 @@ impl fmt::Display for Instruction {
             Implied(op)                         => write!(f, "{}", opcode_name(op)),
             Relative(op, param)                 => write!(f, "{} ${:02X}", opcode_name(op), param),
             RelativeLong(op, param)             => write!(f, "{} ${:04X}", opcode_name(op), param),
+            Reserved(op, param)                 => write!(f, "{} {}", opcode_name(op), param),
             Stack(op)                           => write!(f, "{}", opcode_name(op)),
             StackInterrupt(op, param)           => write!(f, "{} #${:02X}", opcode_name(op), param),
             StackRelative(op, param)            => write!(f, "{} ${:02X}, s", opcode_name(op), param),
+            StackRelativeLong(op, param)        => write!(f, "{} ${:04X}, s", opcode_name(op), param),
             StackRelativeY(op, param)           => write!(f, "{} (${:02X}, s), y", opcode_name(op), param),
         }
     }
@@ -109,141 +113,210 @@ fn opcode_name(op: u8) -> &'static str {
     OPNAMES[op as usize]
 }
 
-macro_rules! opcode(
-    ($i:expr, $op:expr) => (
-        tag_bits!($i, u8, 8, $op);
-    );
-    ($i:expr, $f:expr) => (
-        opcode!($i, call!($f));
-    );
-);
-
 named!(absolute<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x0C) | opcode!(0x0D) | opcode!(0x0E) | opcode!(0x1C) | 
-        opcode!(0x20) | opcode!(0x2C) | opcode!(0x2D) | opcode!(0x2E) | 
-        opcode!(0x4C) | opcode!(0x4D) | opcode!(0x4E) | opcode!(0x6D) | 
-        opcode!(0x6E) | opcode!(0x8D) | opcode!(0x8E) | opcode!(0x9C) | 
-        opcode!(0xAC) | opcode!(0xAD) | opcode!(0xAE) | opcode!(0xCC) | 
-        opcode!(0xCD) | opcode!(0xCE) | opcode!(0xEC) | opcode!(0xED) | 
-        opcode!(0xEE)))
+    do_parse!(op: one_of!(
+        [0x0C, 0x0D, 0x0E, 0x1C, 0x20, 0x2C, 0x2D, 0x2E, 
+        0x4C, 0x4D, 0x4E, 0x6D, 0x6E, 0x8C, 0x8D, 0x8E,
+        0x9C, 0xAC, 0xAD, 0xAE, 0xCC, 0xCD, 0xCE, 0xEC,
+        0xED, 0xEE].as_ref())
     >> param: le_u16
-    >> (Instruction::Absolute(op, param))));
+    >> (Instruction::Absolute(op as u8, param))));
+
+named!(absolute_indirect<Instruction>, 
+    do_parse!(op: char!(0x6C as char)
+    >> param: le_u16
+    >> (Instruction::AbsoluteIndirect(op as u8, param))));
+
+named!(absolute_indirect_x<Instruction>, 
+    do_parse!(op: one_of!([0x7C, 0xFC].as_ref())
+    >> param: le_u16
+    >> (Instruction::AbsoluteIndirectX(op as u8, param))));
+
+named!(absolute_indirect_long<Instruction>, 
+    do_parse!(op: char!(0xDC as char)
+    >> param: le_u16
+    >> (Instruction::AbsoluteIndirectLong(op as u8, param))));
 
 named!(absolute_x<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x1D) | opcode!(0x1E) | opcode!(0x3C) | opcode!(0x3D) | 
-        opcode!(0x3E) | opcode!(0x5D) | opcode!(0x5E) | opcode!(0x7D) | 
-        opcode!(0x7E) | opcode!(0x9D) | opcode!(0x9E) | opcode!(0xBC) | 
-        opcode!(0xBD) | opcode!(0xDD) | opcode!(0xDE) | opcode!(0xFD) | 
-        opcode!(0xFE)))
+    do_parse!(op: one_of!(
+        [0x1D, 0x1E, 0x3C, 0x3D, 0x3E, 0x5D, 0x5E, 0x7D, 
+        0x7E, 0x9D, 0x9E, 0xBC, 0xBD, 0xDD, 0xDE, 0xFD, 
+        0xFE].as_ref())
     >> param: le_u16
-    >> (Instruction::AbsoluteX(op, param))));
+    >> (Instruction::AbsoluteX(op as u8, param))));
 
 named!(absolute_y<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x19) | opcode!(0x39) | opcode!(0x59) | opcode!(0x79) | 
-        opcode!(0x99) | opcode!(0xB9) | opcode!(0xBE) | opcode!(0xD9) | 
-        opcode!(0xF9)))
+    do_parse!(op: one_of!(
+        [0x19, 0x39, 0x59, 0x79, 0x99, 0xB9, 0xBE, 0xD9, 
+        0xF9].as_ref())
     >> param: le_u16
-    >> (Instruction::AbsoluteY(op, param))));
+    >> (Instruction::AbsoluteY(op as u8, param))));
 
 named!(absolute_long<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x0F) | opcode!(0x22) | opcode!(0x2F) | opcode!(0x4F) | 
-        opcode!(0x5C) | opcode!(0x6F) | opcode!(0x8F) | opcode!(0xAF) | 
-        opcode!(0xCF) | opcode!(0xEF)))
+    do_parse!(op: one_of!(
+        [0x0F, 0x22, 0x2F, 0x4F, 0x5C, 0x6F, 0x8F, 0xAF, 
+        0xCF, 0xEF].as_ref())
     >> param: le_u24
-    >> (Instruction::AbsoluteLong(op, param))));
+    >> (Instruction::AbsoluteLong(op as u8, param))));
 
 named!(absolute_long_x<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x1F) | opcode!(0x3F) | opcode!(0x5F) | opcode!(0x7F) | 
-        opcode!(0x9F) | opcode!(0xBF) | opcode!(0xDF) | opcode!(0xFF)))
+    do_parse!(op: one_of!(
+        [0x1F, 0x3F, 0x5F, 0x7F, 0x9F, 0xBF, 0xDF, 0xFF].as_ref())
     >> param: le_u24
-    >> (Instruction::AbsoluteLongX(op, param))));
+    >> (Instruction::AbsoluteLongX(op as u8, param))));
 
 named!(accumulator<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x0A) | opcode!(0x3A) | opcode!(0x1A) | opcode!(0x4A) | 
-        opcode!(0x2A) | opcode!(0x6A)))
-        >> (Instruction::Accumulator(op))));
+    do_parse!(op: one_of!(
+        [0x0A, 0x3A, 0x1A, 0x4A, 0x2A, 0x6A].as_ref())
+        >> (Instruction::Accumulator(op as u8))));
+
+named!(block<Instruction>, 
+    do_parse!(op: one_of!([0x44, 0x54].as_ref())
+        >> param1: le_u8
+        >> param2: le_u8
+        >> (Instruction::Block(op as u8, param1, param2))));
 
 named!(direct<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x04) | opcode!(0x05) | opcode!(0x06) | opcode!(0x14) | 
-        opcode!(0x24) | opcode!(0x25) | opcode!(0x26) | opcode!(0x45) | 
-        opcode!(0x46) | opcode!(0x64) | opcode!(0x65) | opcode!(0x66) | 
-        opcode!(0x85) | opcode!(0x86) | opcode!(0xA4) | opcode!(0xA5) | 
-        opcode!(0xA6) | opcode!(0xC4) | opcode!(0xC5) | opcode!(0xC6) | 
-        opcode!(0xE4) | opcode!(0xE5) | opcode!(0xE6)))
+    do_parse!(op: one_of!(
+        [0x04, 0x05, 0x06, 0x14, 0x24, 0x25, 0x26, 0x45, 
+        0x46, 0x64, 0x65, 0x66, 0x84, 0x85, 0x86, 0xA4,
+        0xA5, 0xA6, 0xC4, 0xC5, 0xC6, 0xE4, 0xE5, 0xE6].as_ref())
         >> param: le_u8
-        >> (Instruction::Direct(op, param))));
+        >> (Instruction::Direct(op as u8, param))));
+
+named!(direct_x<Instruction>, 
+    do_parse!(op: one_of!(
+        [0x15, 0x16, 0x34, 0x35, 0x36, 0x55, 0x56, 0x74,
+        0x75, 0x76, 0x94, 0x95, 0xB4, 0xB5, 0xD5, 0xD6,
+        0xF5, 0xF6,].as_ref())
+        >> param: le_u8
+        >> (Instruction::DirectX(op as u8, param))));
+
+named!(direct_y<Instruction>, 
+    do_parse!(op: one_of!([0xB6, 0x96].as_ref())
+        >> param: le_u8
+        >> (Instruction::DirectY(op as u8, param))));
+
+named!(direct_indirect<Instruction>, 
+    do_parse!(op: one_of!(
+        [0x12, 0x32, 0x47, 0x52, 0x72, 0x92, 0xB2, 0xD2,0xF2].as_ref())
+        >> param: le_u8
+        >> (Instruction::DirectIndirect(op as u8, param))));
+
+named!(direct_indirect_y<Instruction>, 
+    do_parse!(op: one_of!(
+        [0x11, 0x17, 0x31, 0x37, 0x51, 0x57, 0x71, 0x77,
+        0x91, 0xB1, 0xB7, 0xD1, 0xD7, 0xF1].as_ref())
+        >> param: le_u8
+        >> (Instruction::DirectIndirectY(op as u8, param))));
 
 named!(direct_indirect_x<Instruction>,
-    do_parse!(op: bits!(alt!(
-        opcode!(0x01) | opcode!(0x21) | opcode!(0x41) | opcode!(0x81) | 
-        opcode!(0xA1) | opcode!(0xC1) | opcode!(0xE1)))
+    do_parse!(op: one_of!(
+        [0x01, 0x21, 0x41, 0x61, 0x81, 0xA1, 0xC1, 0xE1].as_ref())
     >> param: le_u8
-    >> (Instruction::DirectIndirectX(op, param))));
+    >> (Instruction::DirectIndirectX(op as u8, param))));
+
+named!(direct_indirect_long<Instruction>,
+    do_parse!(op: one_of!(
+        [0x07, 0x27, 0x47, 0x67, 0x87, 0xA7, 0xC7, 0xE7].as_ref())
+    >> param: le_u8
+    >> (Instruction::DirectIndirectLong(op as u8, param))));
+
+named!(direct_indirect_long_y<Instruction>,
+    do_parse!(op: one_of!(
+        [0x17, 0x37, 0x57, 0x77, 0x97, 0xB7, 0xD7, 0xF7].as_ref())
+    >> param: le_u8
+    >> (Instruction::DirectIndirectLongY(op as u8, param))));
 
 named!(immediate<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x09) | opcode!(0x29) | opcode!(0x49) | opcode!(0x69) | 
-        opcode!(0x89) | opcode!(0xA0) | opcode!(0xA2) | opcode!(0xA9) | 
-        opcode!(0xC0) | opcode!(0xC2) | opcode!(0xC9) | opcode!(0xE0) | 
-        opcode!(0xE2) | opcode!(0xE9)))
+    do_parse!(op: one_of!(
+        [0x09, 0x29, 0x49, 0x69, 0x89, 0xA0, 0xA2, 0xA9, 
+        0xC0, 0xC2, 0xC9, 0xE0, 0xE2, 0xE9].as_ref())
     >> param: le_u8
-    >> (Instruction::Immediate(op, param))));
+    >> (Instruction::Immediate(op as u8, param))));
 
 named!(implied<Instruction>, 
-    do_parse!(op: bits!(alt!(
-        opcode!(0x18) | opcode!(0x38) | opcode!(0x58) | opcode!(0x78) | 
-        opcode!(0x88) | opcode!(0x98) | opcode!(0xA8) | opcode!(0xB8) | 
-        opcode!(0xC8) | opcode!(0xD8) | opcode!(0xE8) | opcode!(0xF8) | 
-        opcode!(0x0A) | opcode!(0x1A) | opcode!(0x2A) | opcode!(0x3A) | 
-        opcode!(0x4A) | opcode!(0x6A) | opcode!(0x8A) | opcode!(0x9A) | 
-        opcode!(0xAA) | opcode!(0xBA) | opcode!(0xCA) | opcode!(0xEA) | 
-        opcode!(0x1B) | opcode!(0x3B) | opcode!(0x5B) | opcode!(0x7B) | 
-        opcode!(0x9B) | opcode!(0xBB) | opcode!(0xCB) | opcode!(0xDB) | 
-        opcode!(0xEB) | opcode!(0xFB)))
-        >> (Instruction::Implied(op))));
+    do_parse!(op: one_of!(
+        [0x18, 0x38, 0x58, 0x78, 0x88, 0x98, 0xA8, 0xB8, 
+        0xC8, 0xD8, 0xE8, 0xF8, 0x0A, 0x1A, 0x2A, 0x3A, 
+        0x4A, 0x6A, 0x8A, 0x9A, 0xAA, 0xBA, 0xCA, 0xEA, 
+        0x1B, 0x3B, 0x5B, 0x7B, 0x9B, 0xBB, 0xCB, 0xDB, 
+        0xEB, 0xFB].as_ref())
+        >> (Instruction::Implied(op as u8))));
 
 named!(relative<Instruction>,
-    do_parse!(op: bits!(alt!(
-        opcode!(0x10) | opcode!(0x30) | opcode!(0x50) | opcode!(0x70) | 
-        opcode!(0x80) | opcode!(0x90) | opcode!(0xB0) | opcode!(0xD0) | 
-        opcode!(0xF0)))
+    do_parse!(op: one_of!(
+        [0x10, 0x30, 0x50, 0x70, 0x80, 0x90, 0xB0, 0xD0, 
+        0xF0].as_ref())
     >> param: le_u8
-    >> (Instruction::Relative(op, param))));
+    >> (Instruction::Relative(op as u8, param))));
+
+named!(relative_long<Instruction>,
+    do_parse!(op: char!(0x82 as char)
+    >> param: le_u16
+    >> (Instruction::RelativeLong(op as u8, param))));
+
+named!(reserved<Instruction>,
+    do_parse!(op: char!(0x42 as char)
+    >> param: le_u8
+    >> (Instruction::Reserved(op as u8, param))));
 
 named!(stack<Instruction>,
-    do_parse!(op: bits!(alt!(
-        opcode!(0x08) | opcode!(0x0B) | opcode!(0x28) | opcode!(0x2B) | 
-        opcode!(0x40) | opcode!(0x48) | opcode!(0x4B) | opcode!(0x5A) | 
-        opcode!(0x60) | opcode!(0x62) | opcode!(0x68) | opcode!(0x6B) | 
-        opcode!(0x7A) | opcode!(0x8B) | opcode!(0xAB) | opcode!(0xD4) | 
-        opcode!(0xDA) | opcode!(0xF4) | opcode!(0xFA)))
-        >> (Instruction::Stack(op))));
+    do_parse!(op: one_of!(
+        [0x08, 0x0B, 0x28, 0x2B, 0x40, 0x48, 0x4B, 0x5A, 
+        0x60, 0x68, 0x6B, 0x7A, 0x8B, 0xAB, 0xD4, 0xDA, 0xFA].as_ref())
+        >> (Instruction::Stack(op as u8))));
 
 named!(stack_interrupt<Instruction>,
-    do_parse!(op: bits!(alt!(
-        opcode!(0x00) | opcode!(0x02)))
+    do_parse!(op: one_of!([0x00, 0x02].as_ref())
         >> param: le_u8
-        >> (Instruction::StackInterrupt(op, param))));
+        >> (Instruction::StackInterrupt(op as u8, param))));
 
 named!(stack_relative<Instruction>,
-    do_parse!(op: bits!(alt!(
-        opcode!(0x03) | opcode!(0x23) | opcode!(0x43) | opcode!(0x83) | 
-        opcode!(0xA3) | opcode!(0xC3) | opcode!(0xE3)))
+    do_parse!(op: one_of!([0x03, 0x23, 0x43, 0x63, 0x83, 0xA3, 0xC3, 0xE3].as_ref())
     >> param: le_u8
-    >> (Instruction::StackRelative(op, param))));
+    >> (Instruction::StackRelative(op as u8, param))));
+
+named!(stack_relative_long<Instruction>,
+    do_parse!(op: one_of!([0x62, 0xF4].as_ref())
+    >> param: le_u16
+    >> (Instruction::StackRelativeLong(op as u8, param))));
+
+named!(stack_relative_y<Instruction>,
+    do_parse!(op: one_of!([0x13, 0x33, 0x53, 0x73, 0x93, 0xB3, 0xD3, 0xF3].as_ref())
+    >> param: le_u8
+    >> (Instruction::StackRelativeY(op as u8, param))));
 
 named!(instruction<Instruction>,
     do_parse!(inst: alt!(
-        absolute | absolute_x | absolute_y | absolute_long | absolute_long_x |
-        accumulator | direct | direct_indirect_x | immediate | implied |
-        relative | stack | stack_interrupt | stack_relative)
+        absolute |
+        absolute_indirect |
+        absolute_indirect_long |
+        absolute_indirect_x |
+        absolute_x |
+        absolute_y |
+        absolute_long |
+        absolute_long_x |
+        accumulator |
+        block |
+        direct |
+        direct_x |
+        direct_y |
+        direct_indirect |
+        direct_indirect_x |
+        direct_indirect_y |
+        direct_indirect_long |
+        direct_indirect_long_y |
+        immediate |
+        implied |
+        relative |
+        relative_long |
+        reserved |
+        stack |
+        stack_interrupt |
+        stack_relative |
+        stack_relative_long |
+        stack_relative_y)
         >> (inst)));
 
 named!(pub parse_rom<Vec<Instruction>>, 
