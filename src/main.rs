@@ -9,12 +9,15 @@ mod asm_65c816;
 use asm_65c816::*;
 
 fn main() {
-    let input = include_bytes!("../test/test.sfc");
+    let input = include_bytes!("../test/smw.sfc");
     let sl = &input[..];
 
-    if let Done(_, inst) = parse_rom(sl) {
-        for i in inst {
-            println!("{}", i);
+    match parse_rom(&sl[..0x8000]) {
+        Done(_, inst) => {
+            for i in inst {
+                println!("{}", i);
+            }
         }
+        err => println!("Parse error: {:?}", err),
     }
 }

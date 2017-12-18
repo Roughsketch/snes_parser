@@ -38,6 +38,48 @@ impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Instruction::*;
 
+        let res = match *self {
+            Accumulator(op) |
+            Implied(op) |
+            Stack(op) 
+                => write!(f, "{:02X}          \t", op),
+            Direct(op, p) |
+            DirectX(op, p) |
+            DirectY(op, p) |
+            DirectIndirect(op, p) |
+            DirectIndirectX(op, p) |
+            DirectIndirectY(op, p) |
+            DirectIndirectLong(op, p) |
+            DirectIndirectLongY(op, p) |
+            Immediate(op, p) |
+            Relative(op, p) |
+            Reserved(op, p) |
+            StackInterrupt(op, p) |
+            StackRelative(op, p) |
+            StackRelativeY(op, p) 
+                => write!(f, "{:02X} {:02X}       \t", op, p),
+            Absolute(op, p) |
+            AbsoluteX(op, p) |
+            AbsoluteY(op, p) |
+            AbsoluteIndirect(op, p) |
+            AbsoluteIndirectX(op, p) |
+            AbsoluteIndirectLong(op, p) |
+            RelativeLong(op, p) |
+            StackRelativeLong(op, p) 
+                => write!(f, "{:02X} {:02X} {:02X}    \t",
+                    op, p & 0xFF, ((p & 0xFF00) >> 8)),
+            AbsoluteLong(op, p) |
+            AbsoluteLongX(op, p)
+                => write!(f, "{:02X} {:02X} {:02X} {:02X} \t", 
+                    op, p & 0xFF, ((p & 0xFF00) >> 8), ((p & 0xFF0000) >> 16)),
+            Block(op, p1, p2)
+                => write!(f, "{:02X} {:02X} {:02X}    \t", op, p1, p2),
+        };
+
+        if res.is_err() {
+            return res;
+        }
+
         match *self {
             Absolute(op, param)                 => write!(f, "{} ${:04X}", opcode_name(op), param),
             AbsoluteX(op, param)                => write!(f, "{} ${:04X}, x", opcode_name(op), param),
